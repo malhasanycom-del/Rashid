@@ -14,6 +14,24 @@ data class Channel(
     val seriesId: String = ""
 )
 
+private fun classifyM3uEntry(name: String, group: String, url: String): String {
+    val g = group.lowercase()
+    val n = name.lowercase()
+    val u = url.substringBefore('?').lowercase()
+    val seriesWords = listOf("series", "tv shows", "tv show", "series pack", "مسلسل", "مسلسلات", "حلقات", "مواسم")
+    val movieWords = listOf("movie", "movies", "vod", "films", "film", "cinema", "أفلام", "افلام", "فيلم", "سينما")
+    val liveWords = listOf("live", "المنوعات", "رياضة مباشرة", "بث مباشر", "قنوات", "news", "sports", "الاخبار", "الأخبار")
+    return when {
+        seriesWords.any { g.contains(it) } -> "series"
+        movieWords.any { g.contains(it) } -> "movie"
+        liveWords.any { g.contains(it) } -> "live"
+        listOf(".m3u8", ".ts", ".mpegts").any { u.endsWith(it) } -> "live"
+        listOf(".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm").any { u.endsWith(it) } -> "movie"
+        seriesWords.any { n.contains(it) } && (n.contains("s0") || n.contains("e0") || n.contains("season") || n.contains("الحلقة")) -> "series"
+        else -> "live"
+    }
+}
+
 object M3uParser {
     private val ATTRIBUTE_PATTERN = Regex("([\\w-]+)\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']")
 
@@ -44,13 +62,7 @@ object M3uParser {
                     val name = pendingName.ifBlank { a["tvg-name"].orEmpty() }
                         .ifBlank { "قناة ${result.size + 1}" }
                     val group = a["group-title"].orEmpty().ifBlank { "غير مصنف" }
-                    val lowerGroup = group.lowercase()
-                    val contentType = when {
-                        listOf("series", "tv show", "مسلسل", "مسلسلات").any { lowerGroup.contains(it) } -> "series"
-                        listOf("movie", "movies", "film", "أفلام", "فيلم").any { lowerGroup.contains(it) } -> "movie"
-                        listOf(".mp4", ".mkv", ".avi", ".mov").any { line.substringBefore("?").lowercase().endsWith(it) } -> "movie"
-                        else -> "live"
-                    }
+                    val contentType = classifyM3uEntry(name, group, line)
                     result.add(Channel(result.size + 1, name, line, a["tvg-logo"].orEmpty(), group, a["tvg-id"].orEmpty(), contentType))
                 }
                 attrs = null
