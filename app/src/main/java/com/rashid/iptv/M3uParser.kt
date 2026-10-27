@@ -13,8 +13,6 @@ data class Channel(
 )
 
 object M3uParser {
-    private const val MAX_CHARS = 50 * 1024 * 1024
-    private const val MAX_CHANNELS = 100_000
     private val ATTRIBUTE_PATTERN = Regex("([\\w-]+)\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']")
 
     fun parse(text: String): List<Channel> =
@@ -26,14 +24,9 @@ object M3uParser {
         val seenUrls = HashSet<String>()
         var attrs: Map<String, String>? = null
         var pendingName = ""
-        var totalChars = 0
 
         while (true) {
             val raw = reader.readLine() ?: break
-            totalChars += raw.length
-            require(totalChars <= MAX_CHARS) {
-                "حجم قائمة التشغيل يتجاوز 50 ميغابايت. جرّب رابط القائمة أو ملفًا أصغر."
-            }
             val line = raw.trim()
             if (line.isEmpty()) continue
 
@@ -56,9 +49,6 @@ object M3uParser {
                             a["tvg-id"].orEmpty()
                         )
                     )
-                    require(result.size <= MAX_CHANNELS) {
-                        "القائمة تحتوي أكثر من 100 ألف قناة، وهو حجم أكبر من الحد المدعوم حاليًا."
-                    }
                 }
                 attrs = null
                 pendingName = ""
