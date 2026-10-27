@@ -156,6 +156,32 @@ private fun RashidApp() {
             }
         }
     }
+    LaunchedEffect(Unit) {
+        val savedUrl = prefs.getString("m3u_url", "").orEmpty()
+        val savedHost = prefs.getString("xtream_host", "").orEmpty()
+        val savedUser = prefs.getString("xtream_user", "").orEmpty()
+        val savedPass = prefs.getString("xtream_pass", "").orEmpty()
+        val savedUri = prefs.getString("local_playlist_uri", "").orEmpty()
+        if (savedUrl.isNotBlank() || savedHost.isNotBlank() || savedUri.isNotBlank()) {
+            loading = true
+            try {
+                val restored = withContext(Dispatchers.IO) {
+                    when {
+                        savedUrl.isNotBlank() -> loadM3uUrl(savedUrl)
+                        savedHost.isNotBlank() -> loadXtream(savedHost, savedUser, savedPass)
+                        else -> context.contentResolver.openInputStream(Uri.parse(savedUri))?.use { input ->
+                            BufferedReader(InputStreamReader(input, Charsets.UTF_8), 64 * 1024).use { M3uParser.parse(it) }
+                        } ?: emptyList()
+                    }
+                }
+                channels = restored
+            } catch (e: Exception) {
+                message = "تعذر استعادة المصدر المحفوظ: ${e.localizedMessage ?: "أعد تحميل القائمة من قسم المصادر"}"
+            } finally {
+                loading = false
+            }
+        }
+    }
     DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     LaunchedEffect(current?.url) {
         current?.let {
