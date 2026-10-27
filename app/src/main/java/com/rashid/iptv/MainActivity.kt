@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -243,6 +244,13 @@ private fun RashidApp() {
     }
     BackHandler(enabled = tab != "الرئيسية") { tab = "الرئيسية" }
 
+    if (fullScreen) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx -> PlayerView(ctx).apply { this.player = exoPlayer; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS); setKeepContentOnPlayerReset(true) } }, update = { it.player = exoPlayer })
+            Button(onClick = { fullScreen = false }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) { Text("عودة") }
+            if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF8A80), modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp))
+        }
+    } else {
     Row(Modifier.fillMaxSize().background(Bg)) {
         Column(Modifier.width(190.dp).fillMaxHeight().background(Panel).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -381,33 +389,23 @@ private fun RashidApp() {
                                     }
                                 }
                             } else {
-                                val groupedVisible = remember(visible) {
-                                    visible.groupBy { it.group.trim().ifBlank { "غير مصنف" } }.toSortedMap()
+                                val sortedVisible = remember(visible) {
+                                    visible.sortedWith(compareBy<Channel> { it.group.trim().ifBlank { "غير مصنف" } }.thenBy { it.name })
                                 }
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    groupedVisible.forEach { (groupName, groupChannels) ->
-                                        item(key = "group-header:$groupName") {
-                                            Text(
-                                                "$groupName  •  ${groupChannels.size}",
-                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 3.dp)
-                                                    .background(Color(0xFF203347), RoundedCornerShape(8.dp)).padding(8.dp),
-                                                color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp
-                                            )
-                                        }
-                                        items(groupChannels, key = { it.url }) { channel ->
-                                            Row(Modifier.fillMaxWidth()
-                                                .background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp))
-                                                .clickable { current = channel }.focusable()
-                                                .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    itemsIndexed(sortedVisible, key = { _, channel -> channel.url }) { index, channel ->
+                                        val groupName = channel.group.trim().ifBlank { "غير مصنف" }
+                                        val previousGroup = if (index > 0) sortedVisible[index - 1].group.trim().ifBlank { "غير مصنف" } else null
+                                        Column {
+                                            if (groupName != previousGroup) {
+                                                Text(groupName, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 3.dp).background(Color(0xFF203347), RoundedCornerShape(8.dp)).padding(8.dp), color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            }
+                                            Row(Modifier.fillMaxWidth().background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp)).clickable { current = channel }.focusable().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f)) {
                                                     Text(channel.name, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1)
                                                     Text(channel.group, color = Muted, fontSize = 11.sp, maxLines = 1)
                                                 }
-                                                TextButton(onClick = {
-                                                    favorites = if (favorites.contains(channel.url)) favorites - channel.url else favorites + channel.url
-                                                    prefs.edit().putStringSet("favorites", favorites).apply()
-                                                }) { Icon(Icons.Default.Favorite, contentDescription = "المفضلة",
-                                                    tint = if (favorites.contains(channel.url)) Accent else Muted) }
+                                                TextButton(onClick = { favorites = if (favorites.contains(channel.url)) favorites - channel.url else favorites + channel.url; prefs.edit().putStringSet("favorites", favorites).apply() }) { Icon(Icons.Default.Favorite, contentDescription = "المفضلة", tint = if (favorites.contains(channel.url)) Accent else Muted) }
                                             }
                                         }
                                     }
@@ -446,6 +444,7 @@ private fun RashidApp() {
                 }
             }
         }
+    }
     }
     if (message.isNotBlank()) AlertDialog(onDismissRequest = { message = "" }, title = { Text("راشد") },
         text = { Text(message) }, confirmButton = { TextButton(onClick = { message = "" }) { Text("حسنًا") } })
