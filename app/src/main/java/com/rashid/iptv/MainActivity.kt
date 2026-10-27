@@ -33,6 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
@@ -145,12 +149,35 @@ private fun RashidApp() {
     var current by remember { mutableStateOf<Channel?>(null) }
     var message by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var fullScreen by remember { mutableStateOf(false) }
+    var playbackError by remember { mutableStateOf("") }
     var m3uUrl by remember { mutableStateOf(prefs.getString("m3u_url", "").orEmpty()) }
     var xtreamHost by remember { mutableStateOf(prefs.getString("xtream_host", "").orEmpty()) }
     var xtreamUser by remember { mutableStateOf(prefs.getString("xtream_user", "").orEmpty()) }
     var xtreamPass by remember { mutableStateOf(prefs.getString("xtream_pass", "").orEmpty()) }
     var favorites by remember { mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()) }
-    val exoPlayer = remember(context) { ExoPlayer.Builder(context).build() }
+    val exoPlayer = remember(context) {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("RashidIPTV/1.0 (Android)")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(20000)
+            .setReadTimeoutMs(30000)
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpFactory))
+            .build().apply {
+                addListener(object : Player.Listener {
+                    override fun onPlayerError(error: PlaybackException) {
+                        playbackError = when (error.errorCode) {
+                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "تعذر الاتصال بمصدر البث. تحقق من الإنترنت أو رابط القناة."
+                            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "صيغة البث غير مدعومة أو أن رابط القناة غير صحيح."
+                            else -> "تعذر تشغيل القناة: \${error.errorCodeName}"
+                        }
+                    }
+                })
+            }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -204,7 +231,12 @@ private fun RashidApp() {
     DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     LaunchedEffect(current?.url) {
         current?.let {
-            exoPlayer.setMediaItem(MediaItem.fromUri(it.url))
+            playbackError = ""
+            val itemBuilder = MediaItem.Builder().setUri(it.url)
+            if (it.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) {
+                itemBuilder.setMimeType("application/x-mpegURL")
+            }
+            exoPlayer.setMediaItem(itemBuilder.build())
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
         }
@@ -386,14 +418,29 @@ private fun RashidApp() {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(current?.name ?: "المشغل", color = Color.White, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f), maxLines = 1)
-                                Text(if (current == null) "جاهز" else "تشغيل", color = Accent, fontSize = 12.sp)
+                                TextButton(onClick = { fullScreen = !fullScreen }) {
+                                    Text(if (fullScreen) "تصغير" else "ملء الشاشة")
+                                }
                             }
                             Spacer(Modifier.height(6.dp))
                             AndroidView(modifier = Modifier.fillMaxWidth().weight(1f),
-                                factory = { ctx -> PlayerView(ctx).apply { this.player = exoPlayer; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) } },
+                                factory = { ctx -> PlayerView(ctx).apply {
+                                    this.player = exoPlayer
+                                    useController = true
+                                    setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                                    setKeepContentOnPlayerReset(true)
+                                } },
                                 update = { it.player = exoPlayer })
-                            Spacer(Modifier.height(4.dp))
-                            Text("قد لا تعمل بعض الروابط التي تتطلب ترويسات أو مصادقة خاصة.", color = Muted, fontSize = 10.sp)
+                            if (playbackError.isNotBlank()) {
+                                Text(playbackError, color = Color(0xFFFF8A80), fontSize = 12.sp)
+                                TextButton(onClick = {
+                                    playbackError = ""
+                                    exoPlayer.prepare()
+                                    exoPlayer.playWhenReady = true
+                                }) { Text("إعادة المحاولة") }
+                            } else {
+                                Text("إذا تعذر التشغيل، تحقق من صلاحية الرابط ودعم صيغة البث.", color = Muted, fontSize = 10.sp)
+                            }
                         }
                     }
                 }
