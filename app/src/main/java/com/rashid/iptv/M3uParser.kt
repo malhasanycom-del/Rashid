@@ -9,7 +9,9 @@ data class Channel(
     val url: String,
     val logo: String = "",
     val group: String = "غير مصنف",
-    val tvgId: String = ""
+    val tvgId: String = "",
+    val contentType: String = "live",
+    val seriesId: String = ""
 )
 
 object M3uParser {
@@ -41,14 +43,15 @@ object M3uParser {
                 if (seenUrls.add(line)) {
                     val name = pendingName.ifBlank { a["tvg-name"].orEmpty() }
                         .ifBlank { "قناة ${result.size + 1}" }
-                    result.add(
-                        Channel(
-                            result.size + 1, name, line,
-                            a["tvg-logo"].orEmpty(),
-                            a["group-title"].orEmpty().ifBlank { "غير مصنف" },
-                            a["tvg-id"].orEmpty()
-                        )
-                    )
+                    val group = a["group-title"].orEmpty().ifBlank { "غير مصنف" }
+                    val lowerGroup = group.lowercase()
+                    val contentType = when {
+                        listOf("series", "tv show", "مسلسل", "مسلسلات").any { lowerGroup.contains(it) } -> "series"
+                        listOf("movie", "movies", "film", "أفلام", "فيلم").any { lowerGroup.contains(it) } -> "movie"
+                        listOf(".mp4", ".mkv", ".avi", ".mov").any { line.substringBefore("?").lowercase().endsWith(it) } -> "movie"
+                        else -> "live"
+                    }
+                    result.add(Channel(result.size + 1, name, line, a["tvg-logo"].orEmpty(), group, a["tvg-id"].orEmpty(), contentType))
                 }
                 attrs = null
                 pendingName = ""
