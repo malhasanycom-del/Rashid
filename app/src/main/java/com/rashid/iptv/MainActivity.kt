@@ -349,21 +349,34 @@ private fun RashidApp() {
                                     }
                                 }
                             } else {
-                                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    items(visible, key = { it.url }) { channel ->
-                                        Row(Modifier.fillMaxWidth()
-                                            .background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp))
-                                            .clickable { current = channel }.focusable()
-                                            .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f)) {
-                                                Text(channel.name, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1)
-                                                Text(channel.group, color = Muted, fontSize = 11.sp, maxLines = 1)
+                                val groupedVisible = remember(visible) {
+                                    visible.groupBy { it.group.trim().ifBlank { "غير مصنف" } }.toSortedMap()
+                                }
+                                LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    groupedVisible.forEach { (groupName, groupChannels) ->
+                                        item(key = "group-header:$groupName") {
+                                            Text(
+                                                "$groupName  •  ${groupChannels.size}",
+                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 3.dp)
+                                                    .background(Color(0xFF203347), RoundedCornerShape(8.dp)).padding(8.dp),
+                                                color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                                            )
+                                        }
+                                        items(groupChannels, key = { it.url }) { channel ->
+                                            Row(Modifier.fillMaxWidth()
+                                                .background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp))
+                                                .clickable { current = channel }.focusable()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(channel.name, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1)
+                                                    Text(channel.group, color = Muted, fontSize = 11.sp, maxLines = 1)
+                                                }
+                                                TextButton(onClick = {
+                                                    favorites = if (favorites.contains(channel.url)) favorites - channel.url else favorites + channel.url
+                                                    prefs.edit().putStringSet("favorites", favorites).apply()
+                                                }) { Icon(Icons.Default.Favorite, contentDescription = "المفضلة",
+                                                    tint = if (favorites.contains(channel.url)) Accent else Muted) }
                                             }
-                                            TextButton(onClick = {
-                                                favorites = if (favorites.contains(channel.url)) favorites - channel.url else favorites + channel.url
-                                                prefs.edit().putStringSet("favorites", favorites).apply()
-                                            }) { Icon(Icons.Default.Favorite, contentDescription = "المفضلة",
-                                                tint = if (favorites.contains(channel.url)) Accent else Muted) }
                                         }
                                     }
                                 }
