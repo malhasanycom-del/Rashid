@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -131,6 +132,14 @@ private fun RashidApp() {
     val prefs = remember { context.getSharedPreferences("rashid_prefs", android.content.Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("الرئيسية") }
     var query by remember { mutableStateOf("") }
+    var selectedGroup by remember { mutableStateOf("الكل") }
+    val groupNames = remember(channels) {
+        listOf("الكل") + channels.asSequence()
+            .map { it.group.trim().ifBlank { "غير مصنف" } }
+            .distinct()
+            .sorted()
+            .toList()
+    }
     var sourceText by remember { mutableStateOf("") }
     var channels by remember { mutableStateOf(emptyList<Channel>()) }
     var current by remember { mutableStateOf<Channel?>(null) }
@@ -312,9 +321,24 @@ private fun RashidApp() {
                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                                 label = { Text("ابحث عن قناة") }, leadingIcon = { Icon(Icons.Default.Search, null) })
                             Spacer(Modifier.height(8.dp))
-                            val visible = channels.filter { channel ->
-                                channel.name.contains(query, ignoreCase = true) &&
-                                    (tab != "المفضلة" || favorites.contains(channel.url))
+                            if (tab == "كل القنوات" || tab == "المفضلة") {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(groupNames, key = { it }) { group ->
+                                        FilterChip(
+                                            selected = selectedGroup == group,
+                                            onClick = { selectedGroup = group },
+                                            label = { Text(group, maxLines = 1) }
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            val visible = remember(channels, query, tab, favorites, selectedGroup) {
+                                channels.filter { channel ->
+                                    channel.name.contains(query, ignoreCase = true) &&
+                                        (tab != "المفضلة" || favorites.contains(channel.url)) &&
+                                        (selectedGroup == "الكل" || channel.group.trim().ifBlank { "غير مصنف" } == selectedGroup)
+                                }
                             }
                             if (visible.isEmpty()) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
