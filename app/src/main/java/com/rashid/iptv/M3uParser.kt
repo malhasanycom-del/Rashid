@@ -14,14 +14,16 @@ data class Channel(
 
 object M3uParser {
     private const val MAX_CHARS = 50 * 1024 * 1024
-    private const val MAX_CHANNELS = 150_000
+    private const val MAX_CHANNELS = 100_000
+    private val ATTRIBUTE_PATTERN = Regex("([\\w-]+)\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']")
 
     fun parse(text: String): List<Channel> =
         StringReader(text.removePrefix("\uFEFF")).buffered().use { parse(it) }
 
-    /** Reads incrementally so a large playlist is not duplicated in memory as one giant String. */
+    /** Parses incrementally; never reads the entire file into a second String. */
     fun parse(reader: BufferedReader): List<Channel> {
-        val result = LinkedHashMap<String, Channel>()
+        val result = ArrayList<Channel>()
+        val seenUrls = HashSet<String>()
         var attrs: Map<String, String>? = null
         var pendingName = ""
         var totalChars = 0
@@ -30,7 +32,7 @@ object M3uParser {
             val raw = reader.readLine() ?: break
             totalChars += raw.length
             require(totalChars <= MAX_CHARS) {
-                "حجم قائمة التشغيل أكبر من الحد الآمن (50 ميغابايت). استخدم رابط M3U أو قائمة أصغر."
+                "حجم قائمة التشغيل يتجاوز 50 ميغابايت. جرّب رابط القائمة أو ملفًا أصغر."
             }
             val line = raw.trim()
             if (line.isEmpty()) continue
@@ -39,27 +41,29 @@ object M3uParser {
                 val comma = line.indexOf(',')
                 val meta = if (comma >= 0) line.substring(0, comma) else line
                 pendingName = if (comma >= 0) line.substring(comma + 1).trim() else ""
-                attrs = Regex("([\\w-]+)\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']")
-                    .findAll(meta).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
+                attrs = ATTRIBUTE_PATTERN.findAll(meta)
+                    .associate { it.groupValues[1].lowercase() to it.groupValues[2] }
             } else if (!line.startsWith("#") && attrs != null) {
                 val a = attrs.orEmpty()
-                val name = pendingName.ifBlank { a["tvg-name"].orEmpty() }
-                    .ifBlank { "قناة ${result.size + 1}" }
-                if (!result.containsKey(line)) {
-                    result[line] = Channel(
-                        result.size + 1, name, line,
-                        a["tvg-logo"].orEmpty(),
-                        a["group-title"].orEmpty().ifBlank { "غير مصنف" },
-                        a["tvg-id"].orEmpty()
+                if (seenUrls.add(line)) {
+                    val name = pendingName.ifBlank { a["tvg-name"].orEmpty() }
+                        .ifBlank { "قناة ${result.size + 1}" }
+                    result.add(
+                        Channel(
+                            result.size + 1, name, line,
+                            a["tvg-logo"].orEmpty(),
+                            a["group-title"].orEmpty().ifBlank { "غير مصنف" },
+                            a["tvg-id"].orEmpty()
+                        )
                     )
                     require(result.size <= MAX_CHANNELS) {
-                        "تحتوي القائمة على عدد قنوات كبير جدًا (أكثر من 150 ألف قناة)."
+                        "القائمة تحتوي أكثر من 100 ألف قناة، وهو حجم أكبر من الحد المدعوم حاليًا."
                     }
                 }
                 attrs = null
                 pendingName = ""
             }
         }
-        return result.values.toList()
+        return result
     }
 }
