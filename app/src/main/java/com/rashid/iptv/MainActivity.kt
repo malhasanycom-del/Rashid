@@ -1,6 +1,8 @@
 package com.rashid.iptv
 
 import android.net.Uri
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -119,8 +121,8 @@ private fun RashidApp() {
     val prefs = remember { context.getSharedPreferences("rashid_prefs", android.content.Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("الرئيسية") }
     var query by remember { mutableStateOf("") }
-    var sourceText by remember { mutableStateOf(prefs.getString("playlist_text", "").orEmpty()) }
-    var channels by remember { mutableStateOf(M3uParser.parse(sourceText)) }
+    var sourceText by remember { mutableStateOf("") }
+    var channels by remember { mutableStateOf(emptyList<Channel>()) }
     var current by remember { mutableStateOf<Channel?>(null) }
     var message by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -135,15 +137,17 @@ private fun RashidApp() {
             scope.launch {
                 loading = true
                 try {
-                    val text = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                            ?: error("تعذر قراءة الملف")
+                    try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+                    val parsed = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            BufferedReader(InputStreamReader(input, Charsets.UTF_8), 64 * 1024).use { M3uParser.parse(it) }
+                        } ?: error("تعذر قراءة الملف")
                     }
-                    val parsed = M3uParser.parse(text)
                     if (parsed.isEmpty()) error("لم نعثر على قنوات. تحقق من ملف M3U.")
-                    sourceText = text
+                    sourceText = ""
                     channels = parsed
-                    prefs.edit().putString("playlist_text", text).apply()
+                    prefs.edit().putString("local_playlist_uri", uri.toString()).remove("playlist_text")
+                        .remove("m3u_url").remove("xtream_host").remove("xtream_user").remove("xtream_pass").apply()
                     tab = "كل القنوات"
                     message = "تم تحميل ${parsed.size} قناة بنجاح"
                 } catch (e: Exception) {
@@ -205,7 +209,9 @@ private fun RashidApp() {
                                         val parsed = withContext(Dispatchers.IO) { loadM3uUrl(m3uUrl) }
                                         channels = parsed
                                         sourceText = ""
-                                        prefs.edit().remove("playlist_text").putString("m3u_url", m3uUrl.trim()).apply()
+                                        prefs.edit().remove("playlist_text").remove("local_playlist_uri")
+                                            .remove("xtream_host").remove("xtream_user").remove("xtream_pass")
+                                            .putString("m3u_url", m3uUrl.trim()).apply()
                                         tab = "كل القنوات"
                                         message = "تم تحميل ${parsed.size} قناة من رابط M3U"
                                     } catch (e: Exception) {
@@ -233,7 +239,8 @@ private fun RashidApp() {
                                         val parsed = withContext(Dispatchers.IO) { loadXtream(xtreamHost, xtreamUser, xtreamPass) }
                                         channels = parsed
                                         sourceText = ""
-                                        prefs.edit().remove("playlist_text").putString("xtream_host", xtreamHost.trim())
+                                        prefs.edit().remove("playlist_text").remove("local_playlist_uri").remove("m3u_url")
+                                            .putString("xtream_host", xtreamHost.trim())
                                             .putString("xtream_user", xtreamUser.trim()).putString("xtream_pass", xtreamPass).apply()
                                         tab = "كل القنوات"
                                         message = "تم الاتصال وتحميل ${parsed.size} قناة مباشرة"
@@ -256,7 +263,7 @@ private fun RashidApp() {
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(onClick = {
                             sourceText = ""; channels = emptyList(); current = null; exoPlayer.stop()
-                            prefs.edit().remove("playlist_text").remove("m3u_url").remove("xtream_host")
+                            prefs.edit().remove("playlist_text").remove("local_playlist_uri").remove("m3u_url").remove("xtream_host")
                                 .remove("xtream_user").remove("xtream_pass").apply()
                             message = "تم حذف بيانات المصادر المحفوظة"
                         }) { Text("حذف بيانات المصادر") }
@@ -322,7 +329,13 @@ private fun RashidApp() {
     }
     if (message.isNotBlank()) AlertDialog(onDismissRequest = { message = "" }, title = { Text("راشد") },
         text = { Text(message) }, confirmButton = { TextButton(onClick = { message = "" }) { Text("حسنًا") } })
-    if (loading) Box(Modifier.fillMaxSize().background(Color(0x66000000)), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = Accent)
+    if (loading) Box(Modifier.fillMaxSize().background(Color(0xAA080D16)), contentAlignment = Alignment.Center) {
+        Column(Modifier.background(Panel, RoundedCornerShape(18.dp)).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = Accent)
+            Spacer(Modifier.height(14.dp))
+            Text("جارٍ تحميل القائمة وتحليل القنوات…", color = Color.White)
+            Spacer(Modifier.height(6.dp))
+            Text("قد يستغرق ذلك وقتًا حسب حجم الملف وسرعة الإنترنت", color = Muted, fontSize = 12.sp)
+        }
     }
 }
