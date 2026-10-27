@@ -133,6 +133,8 @@ private fun RashidApp() {
     var tab by remember { mutableStateOf("الرئيسية") }
     var query by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf("الكل") }
+    var sourceText by remember { mutableStateOf("") }
+    var channels by remember { mutableStateOf(emptyList<Channel>()) }
     val groupNames = remember(channels) {
         listOf("الكل") + channels.asSequence()
             .map { it.group.trim().ifBlank { "غير مصنف" } }
@@ -140,8 +142,6 @@ private fun RashidApp() {
             .sorted()
             .toList()
     }
-    var sourceText by remember { mutableStateOf("") }
-    var channels by remember { mutableStateOf(emptyList<Channel>()) }
     var current by remember { mutableStateOf<Channel?>(null) }
     var message by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
