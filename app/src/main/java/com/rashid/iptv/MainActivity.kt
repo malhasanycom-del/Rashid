@@ -103,33 +103,87 @@ private fun loadM3uUrl(address: String): List<Channel> {
 
 private fun loadXtream(base: String, username: String, password: String): List<Channel> {
     val cleanBase = base.trim().trimEnd('/')
-    require(cleanBase.startsWith("http://") || cleanBase.startsWith("https://")) {
-        "أدخل عنوان الخادم كاملًا، مثل https://example.com:8080"
-    }
+    require(cleanBase.startsWith("http://") || cleanBase.startsWith("https://")) { "أدخل عنوان الخادم كاملًا." }
     require(username.isNotBlank() && password.isNotBlank()) { "أدخل اسم المستخدم وكلمة المرور." }
     val user = URLEncoder.encode(username.trim(), "UTF-8")
-    val pass = URLEncoder.encode(password, "UTF-8")
+    val pass = URLEncoder.encode(password.trim(), "UTF-8")
     val api = "$cleanBase/player_api.php?username=$user&password=$pass"
     val account = org.json.JSONObject(httpGet(api))
     val userInfo = account.optJSONObject("user_info")
-    if (userInfo == null || userInfo.optString("auth") == "0") {
-        error("بيانات Xtream غير صحيحة أو رفض الخادم تسجيل الدخول.")
+    if (userInfo == null || userInfo.optString("auth") == "0") error("بيانات Xtream غير صحيحة.")
+
+    fun categories(action: String): Map<String, String> {
+        val array = JSONArray(httpGet("$api&action=$action"))
+        val map = HashMap<String, String>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val id = item.optString("category_id")
+            val name = item.optString("category_name")
+            if (id.isNotBlank() && name.isNotBlank()) map[id] = name
+        }
+        return map
     }
-    val liveUrl = "$cleanBase/player_api.php?username=$user&password=$pass&action=get_live_streams"
-    val arr = JSONArray(httpGet(liveUrl))
-    val list = ArrayList<Channel>(arr.length())
-    for (i in 0 until arr.length()) {
-        val item = arr.optJSONObject(i) ?: continue
-        val streamId = item.optString("stream_id")
-        if (streamId.isBlank() || streamId == "null") continue
-        val name = item.optString("name").ifBlank { "قناة ${i + 1}" }
-        val category = item.optString("category_name").ifBlank { "بث مباشر" }
+    val liveCategories = categories("get_live_categories")
+    val movieCategories = categories("get_vod_categories")
+    val seriesCategories = categories("get_series_categories")
+    val list = ArrayList<Channel>()
+
+    val liveArray = JSONArray(httpGet("$api&action=get_live_streams"))
+    for (i in 0 until liveArray.length()) {
+        val item = liveArray.optJSONObject(i) ?: continue
+        val id = item.optString("stream_id")
+        if (id.isBlank() || id == "null") continue
+        val group = liveCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "بث مباشر" }
+        val name = item.optString("name").ifBlank { "قناة \${i + 1}" }
         val ext = item.optString("container_extension").ifBlank { "ts" }
-        val streamUrl = "$cleanBase/live/$user/$pass/$streamId.$ext"
-        list += Channel(list.size + 1, name, streamUrl, item.optString("stream_icon"), category, item.optString("epg_channel_id"))
+        list += Channel(list.size + 1, name, "$cleanBase/live/$user/$pass/$id.$ext", item.optString("stream_icon"), group, item.optString("epg_channel_id"), "live")
     }
-    if (list.isEmpty()) error("تم الاتصال بالخادم لكن لم تُرجع واجهة Xtream أي قنوات مباشرة.")
+    val vodArray = JSONArray(httpGet("$api&action=get_vod_streams"))
+    for (i in 0 until vodArray.length()) {
+        val item = vodArray.optJSONObject(i) ?: continue
+        val id = item.optString("stream_id")
+        if (id.isBlank() || id == "null") continue
+        val group = movieCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "أفلام" }
+        val name = item.optString("name").ifBlank { "فيلم \${i + 1}" }
+        val ext = item.optString("container_extension").ifBlank { "mp4" }
+        list += Channel(list.size + 1, name, "$cleanBase/movie/$user/$pass/$id.$ext", item.optString("stream_icon").ifBlank { item.optString("cover") }, group, "", "movie")
+    }
+    val seriesArray = JSONArray(httpGet("$api&action=get_series"))
+    for (i in 0 until seriesArray.length()) {
+        val item = seriesArray.optJSONObject(i) ?: continue
+        val id = item.optString("series_id")
+        if (id.isBlank() || id == "null") continue
+        val group = seriesCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "مسلسلات" }
+        val name = item.optString("name").ifBlank { "مسلسل \${i + 1}" }
+        list += Channel(list.size + 1, name, "series://$id", item.optString("cover").ifBlank { item.optString("cover_big") }, group, "", "series", id)
+    }
+    if (list.isEmpty()) error("تم الاتصال بالخادم لكن لم يُرجع أي محتوى.")
     return list
+}
+
+private fun loadXtreamEpisodes(base: String, username: String, password: String, seriesId: String): List<Channel> {
+    val cleanBase = base.trim().trimEnd('/')
+    val user = URLEncoder.encode(username.trim(), "UTF-8")
+    val pass = URLEncoder.encode(password.trim(), "UTF-8")
+    val api = "$cleanBase/player_api.php?username=$user&password=$pass&action=get_series_info&series_id=$seriesId"
+    val root = org.json.JSONObject(httpGet(api))
+    val episodeObject = root.optJSONObject("episodes") ?: error("لم يعثر الخادم على حلقات لهذا المسلسل.")
+    val result = ArrayList<Channel>()
+    val seasons = episodeObject.keys()
+    while (seasons.hasNext()) {
+        val season = seasons.next()
+        val episodes = episodeObject.optJSONArray(season) ?: continue
+        for (i in 0 until episodes.length()) {
+            val episode = episodes.optJSONObject(i) ?: continue
+            val id = episode.optString("id")
+            if (id.isBlank() || id == "null") continue
+            val ext = episode.optString("container_extension").ifBlank { "mp4" }
+            val name = episode.optString("title").ifBlank { "الحلقة \${i + 1}" }
+            result += Channel(result.size + 1, name, "$cleanBase/series/$user/$pass/$id.$ext", "", "الموسم $season", "", "episode")
+        }
+    }
+    if (result.isEmpty()) error("لم يعثر على حلقات لهذا المسلسل.")
+    return result
 }
 
 @Composable
@@ -150,6 +204,8 @@ private fun RashidApp() {
             .toList()
     }
     var current by remember { mutableStateOf<Channel?>(null) }
+    var selectedSeriesName by remember { mutableStateOf("") }
+    var seriesEpisodes by remember { mutableStateOf(emptyList<Channel>()) }
     var message by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var fullScreen by remember { mutableStateOf(false) }
@@ -281,7 +337,7 @@ private fun RashidApp() {
             Text("راشد", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = Accent)
             Text("IPTV PLAYER", fontSize = 11.sp, color = Muted)
             Spacer(Modifier.height(8.dp))
-            listOf("الرئيسية", "كل القنوات", "المفضلة", "المصادر", "الإعدادات").forEach { item ->
+            listOf("الرئيسية", "كل القنوات", "الأفلام", "المسلسلات", "المفضلة", "المصادر", "الإعدادات").forEach { item ->
                 var focused by remember { mutableStateOf(false) }
                 Row(Modifier.fillMaxWidth()
                     .background(if (tab == item || focused) Color(0xFF203347) else Color.Transparent, RoundedCornerShape(10.dp))
@@ -296,7 +352,7 @@ private fun RashidApp() {
         Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 20.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(tab, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(if (tab == "المسلسلات" && selectedSeriesName.isNotBlank()) selectedSeriesName else tab, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Text("مشغل القنوات • واجهة أفقية للتحكم بالريموت", color = Muted, fontSize = 12.sp)
                 }
                 if (tab == "المصادر") Button(onClick = { picker.launch(arrayOf("*/*")) }) { Text("استيراد ملف") }
@@ -385,7 +441,7 @@ private fun RashidApp() {
                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                                 label = { Text("ابحث عن قناة") }, leadingIcon = { Icon(Icons.Default.Search, null) })
                             Spacer(Modifier.height(8.dp))
-                            if (tab == "كل القنوات" || tab == "المفضلة") {
+                            if (tab in listOf("كل القنوات", "المفضلة", "الأفلام", "المسلسلات")) {
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     items(groupNames, key = { it }) { group ->
                                         FilterChip(
@@ -397,11 +453,18 @@ private fun RashidApp() {
                                 }
                                 Spacer(Modifier.height(8.dp))
                             }
-                            val visible = remember(channels, query, tab, favorites, selectedGroup) {
-                                channels.filter { channel ->
+                            val sourceForTab = when (tab) {
+                                "الأفلام" -> channels.filter { it.contentType == "movie" }
+                                "المسلسلات" -> if (selectedSeriesName.isNotBlank()) seriesEpisodes else channels.filter { it.contentType == "series" }
+                                "المفضلة" -> channels.filter { favorites.contains(it.url) }
+                                else -> channels.filter { it.contentType == "live" }
+                            }
+                            val visible = remember(sourceForTab, query, tab, favorites, selectedGroup) {
+                                sourceForTab.filter { channel ->
                                     channel.name.contains(query, ignoreCase = true) &&
-                                        (tab != "المفضلة" || favorites.contains(channel.url)) &&
-                                        (selectedGroup == "الكل" || channel.group.trim().ifBlank { "غير مصنف" } == selectedGroup)
+                                        (tab !in listOf("كل القنوات", "المفضلة", "الأفلام", "المسلسلات") ||
+                                         selectedGroup == "الكل" ||
+                                         channel.group.trim().ifBlank { "غير مصنف" } == selectedGroup)
                                 }
                             }
                             if (visible.isEmpty()) {
@@ -410,6 +473,7 @@ private fun RashidApp() {
                                         Icon(Icons.Default.LiveTv, contentDescription = null, tint = Muted, modifier = Modifier.size(44.dp))
                                         Text(if (channels.isEmpty()) "أضف رابط M3U أو Xtream من المصادر" else "لا توجد نتائج", color = Muted)
                                         if (channels.isEmpty()) Button(onClick = { tab = "المصادر" }) { Text("إضافة مصدر") }
+                                        if (tab == "المسلسلات" && selectedSeriesName.isNotBlank()) Button(onClick = { selectedSeriesName = ""; seriesEpisodes = emptyList() }) { Text("العودة إلى المسلسلات") }
                                     }
                                 }
                             } else {
@@ -424,7 +488,25 @@ private fun RashidApp() {
                                             if (groupName != previousGroup) {
                                                 Text(groupName, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 3.dp).background(Color(0xFF203347), RoundedCornerShape(8.dp)).padding(8.dp), color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                             }
-                                            Row(Modifier.fillMaxWidth().background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp)).clickable { current = channel }.focusable().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Row(Modifier.fillMaxWidth().background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp)).clickable {
+                                                if (channel.contentType == "series") {
+                                                    scope.launch {
+                                                        loading = true
+                                                        try {
+                                                            val episodes = withContext(Dispatchers.IO) { loadXtreamEpisodes(xtreamHost, xtreamUser, xtreamPass, channel.seriesId) }
+                                                            seriesEpisodes = episodes
+                                                            selectedSeriesName = channel.name
+                                                            selectedGroup = "الكل"
+                                                            query = ""
+                                                            message = "تم تحميل \${episodes.size} حلقة"
+                                                        } catch (e: Exception) {
+                                                            message = "تعذر تحميل الحلقات: \${e.localizedMessage ?: "خطأ غير معروف"}"
+                                                        } finally { loading = false }
+                                                    }
+                                                } else {
+                                                    current = channel
+                                                }
+                                            }.focusable().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f)) {
                                                     Text(channel.name, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1)
                                                     Text(channel.group, color = Muted, fontSize = 11.sp, maxLines = 1)
