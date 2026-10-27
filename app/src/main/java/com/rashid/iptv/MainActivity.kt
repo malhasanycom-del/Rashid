@@ -3,7 +3,7 @@ package com.rashid.iptv
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.BackHandler
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -129,7 +129,7 @@ private fun RashidApp() {
     var xtreamUser by remember { mutableStateOf(prefs.getString("xtream_user", "").orEmpty()) }
     var xtreamPass by remember { mutableStateOf(prefs.getString("xtream_pass", "").orEmpty()) }
     var favorites by remember { mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()) }
-    val player = remember(context) { ExoPlayer.Builder(context).build() }
+    val exoPlayer = remember(context) { ExoPlayer.Builder(context).build() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -152,12 +152,12 @@ private fun RashidApp() {
             }
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     LaunchedEffect(current?.url) {
         current?.let {
-            player.setMediaItem(MediaItem.fromUri(it.url))
-            player.prepare()
-            player.playWhenReady = true
+            exoPlayer.setMediaItem(MediaItem.fromUri(it.url))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
         }
     }
     BackHandler(enabled = tab != "الرئيسية") { tab = "الرئيسية" }
@@ -255,7 +255,7 @@ private fun RashidApp() {
                         Text("المصادر المحفوظة على الجهاز تبقى متاحة بعد إغلاق التطبيق.", color = Muted)
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(onClick = {
-                            sourceText = ""; channels = emptyList(); current = null; player.stop()
+                            sourceText = ""; channels = emptyList(); current = null; exoPlayer.stop()
                             prefs.edit().remove("playlist_text").remove("m3u_url").remove("xtream_host")
                                 .remove("xtream_user").remove("xtream_pass").apply()
                             message = "تم حذف بيانات المصادر المحفوظة"
@@ -310,8 +310,8 @@ private fun RashidApp() {
                             }
                             Spacer(Modifier.height(6.dp))
                             AndroidView(modifier = Modifier.fillMaxWidth().weight(1f),
-                                factory = { ctx -> PlayerView(ctx).apply { player = player; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) } },
-                                update = { it.player = player })
+                                factory = { ctx -> PlayerView(ctx).apply { this.player = exoPlayer; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) } },
+                                update = { it.player = exoPlayer })
                             Spacer(Modifier.height(4.dp))
                             Text("قد لا تعمل بعض الروابط التي تتطلب ترويسات أو مصادقة خاصة.", color = Muted, fontSize = 10.sp)
                         }
