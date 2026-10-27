@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -229,6 +231,23 @@ private fun RashidApp() {
             }
         }
     }
+    DisposableEffect(fullScreen) {
+        val window = (context as? android.app.Activity)?.window
+        if (window != null) {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            if (fullScreen) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            val window = (context as? android.app.Activity)?.window
+            if (window != null) WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    BackHandler(enabled = fullScreen) { fullScreen = false }
     DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     LaunchedEffect(current?.url) {
         current?.let {
@@ -246,8 +265,13 @@ private fun RashidApp() {
 
     if (fullScreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx -> PlayerView(ctx).apply { this.player = exoPlayer; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS); setKeepContentOnPlayerReset(true) } }, update = { it.player = exoPlayer })
-            Button(onClick = { fullScreen = false }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) { Text("عودة") }
+            AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx -> PlayerView(ctx).apply {
+                this.player = exoPlayer
+                useController = true
+                setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                setKeepContentOnPlayerReset(true)
+                setKeepContentOnPlayerReset(true)
+            } }, update = { it.player = exoPlayer })
             if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF8A80), modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp))
         }
     } else {
