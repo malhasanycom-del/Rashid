@@ -77,10 +77,22 @@ private fun httpGet(address: String): String {
 }
 
 private fun loadM3uUrl(address: String): List<Channel> {
-    val text = httpGet(address.trim())
-    val parsed = M3uParser.parse(text)
-    if (parsed.isEmpty()) error("لم يعثر التطبيق على قنوات في رابط M3U. تحقق من الرابط وصلاحيته.")
-    return parsed
+    val connection = URL(address.trim()).openConnection() as HttpURLConnection
+    connection.connectTimeout = 15000
+    connection.readTimeout = 20000
+    connection.instanceFollowRedirects = true
+    connection.setRequestProperty("User-Agent", "RashidIPTV/1.0")
+    return try {
+        val code = connection.responseCode
+        if (code !in 200..299) error("فشل رابط M3U: HTTP $code")
+        val declared = connection.contentLengthLong
+        if (declared > 50L * 1024 * 1024) error("حجم القائمة أكبر من 50 ميغابايت. استخدم قائمة أصغر.")
+        val parsed = connection.inputStream.bufferedReader(Charsets.UTF_8).use { M3uParser.parse(it) }
+        if (parsed.isEmpty()) error("لم يعثر التطبيق على قنوات في رابط M3U. تحقق من الرابط وصلاحيته.")
+        parsed
+    } finally {
+        connection.disconnect()
+    }
 }
 
 private fun loadXtream(base: String, username: String, password: String): List<Channel> {
