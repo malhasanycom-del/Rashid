@@ -134,7 +134,7 @@ private fun loadXtream(base: String, username: String, password: String): List<C
         val id = item.optString("stream_id")
         if (id.isBlank() || id == "null") continue
         val group = liveCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "بث مباشر" }
-        val name = item.optString("name").ifBlank { "قناة \${i + 1}" }
+        val name = item.optString("name").ifBlank { "قناة ${i + 1}" }
         val ext = item.optString("container_extension").ifBlank { "ts" }
         list += Channel(list.size + 1, name, "$cleanBase/live/$user/$pass/$id.$ext", item.optString("stream_icon"), group, item.optString("epg_channel_id"), "live")
     }
@@ -144,7 +144,7 @@ private fun loadXtream(base: String, username: String, password: String): List<C
         val id = item.optString("stream_id")
         if (id.isBlank() || id == "null") continue
         val group = movieCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "أفلام" }
-        val name = item.optString("name").ifBlank { "فيلم \${i + 1}" }
+        val name = item.optString("name").ifBlank { "فيلم ${i + 1}" }
         val ext = item.optString("container_extension").ifBlank { "mp4" }
         list += Channel(list.size + 1, name, "$cleanBase/movie/$user/$pass/$id.$ext", item.optString("stream_icon").ifBlank { item.optString("cover") }, group, "", "movie")
     }
@@ -154,7 +154,7 @@ private fun loadXtream(base: String, username: String, password: String): List<C
         val id = item.optString("series_id")
         if (id.isBlank() || id == "null") continue
         val group = seriesCategories[item.optString("category_id")] ?: item.optString("category_name").ifBlank { "مسلسلات" }
-        val name = item.optString("name").ifBlank { "مسلسل \${i + 1}" }
+        val name = item.optString("name").ifBlank { "مسلسل ${i + 1}" }
         list += Channel(list.size + 1, name, "series://$id", item.optString("cover").ifBlank { item.optString("cover_big") }, group, "", "series", id)
     }
     if (list.isEmpty()) error("تم الاتصال بالخادم لكن لم يُرجع أي محتوى.")
@@ -178,7 +178,7 @@ private fun loadXtreamEpisodes(base: String, username: String, password: String,
             val id = episode.optString("id")
             if (id.isBlank() || id == "null") continue
             val ext = episode.optString("container_extension").ifBlank { "mp4" }
-            val name = episode.optString("title").ifBlank { "الحلقة \${i + 1}" }
+            val name = episode.optString("title").ifBlank { "الحلقة ${i + 1}" }
             result += Channel(result.size + 1, name, "$cleanBase/series/$user/$pass/$id.$ext", "", "الموسم $season", "", "episode")
         }
     }
@@ -231,7 +231,7 @@ private fun RashidApp() {
                             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "تعذر الاتصال بمصدر البث. تحقق من الإنترنت أو رابط القناة."
                             PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                             PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "صيغة البث غير مدعومة أو أن رابط القناة غير صحيح."
-                            else -> "تعذر تشغيل القناة: \${error.errorCodeName}"
+                            else -> "تعذر تشغيل القناة: ${error.errorCodeName}"
                         }
                     }
                 })
@@ -489,7 +489,7 @@ private fun RashidApp() {
                                                 Text(groupName, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 3.dp).background(Color(0xFF203347), RoundedCornerShape(8.dp)).padding(8.dp), color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                             }
                                             Row(Modifier.fillMaxWidth().background(if (current?.url == channel.url) Color(0xFF203B48) else Panel, RoundedCornerShape(10.dp)).clickable {
-                                                if (channel.contentType == "series") {
+                                                if (channel.contentType == "series" && channel.seriesId.isNotBlank()) {
                                                     scope.launch {
                                                         loading = true
                                                         try {
@@ -498,9 +498,9 @@ private fun RashidApp() {
                                                             selectedSeriesName = channel.name
                                                             selectedGroup = "الكل"
                                                             query = ""
-                                                            message = "تم تحميل \${episodes.size} حلقة"
+                                                            message = "تم تحميل ${episodes.size} حلقة"
                                                         } catch (e: Exception) {
-                                                            message = "تعذر تحميل الحلقات: \${e.localizedMessage ?: "خطأ غير معروف"}"
+                                                            message = "تعذر تحميل الحلقات: ${e.localizedMessage ?: "خطأ غير معروف"}"
                                                         } finally { loading = false }
                                                     }
                                                 } else {
